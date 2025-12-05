@@ -3,22 +3,32 @@ const bodyParser = require('body-parser');
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
-// Removed cors require
 
 const app = express();
 
-// --- CORS FIX ---
+// --- 🔴 FIXED CORS SECTION ---
 app.use((req, res, next) => {
+    // 1. Allow connections from ANY website
     res.header("Access-Control-Allow-Origin", "*");
+    
+    // 2. Allow these standard headers
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    
+    // 3. Allow these actions
     res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+
+    // 4. CRITICAL: If browser sends a "Preflight" (OPTIONS) check, reply OK immediately.
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    
     next();
 });
 
 app.use(bodyParser.json());
 
 // ============================================================
-// 👇 YOUR FINAL DESTINATION LINK
+// 👇 YOUR FINAL DESTINATION LINK (Verify this is correct)
 const FINAL_DESTINATION = "https://t.me/m/V8gacND6Yjcx"; 
 // ============================================================
 
@@ -67,7 +77,7 @@ app.post('/api/init-user', async (req, res) => {
     
     const uniqueToken = 'user_' + Math.floor(Math.random() * 10000000);
 
-    // 👇 UPDATED TABLE NAME HERE
+    // Using your table name: 'usersbalka'
     const { error } = await supabase.from('usersbalka').insert({ 
         unique_token: uniqueToken, 
         fb_clid: fbclid, 
@@ -97,12 +107,10 @@ app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/start user_')) {
         const token = text.split(' ')[1]; 
 
-        // 👇 UPDATED TABLE NAME HERE
         const { data: user, error } = await supabase
             .from('usersbalka').select('*').eq('unique_token', token).single();
 
         if (user && !error) {
-            // 👇 UPDATED TABLE NAME HERE
             await supabase.from('usersbalka')
                 .update({ telegram_id: chatId, status: 'verified' })
                 .eq('unique_token', token);
