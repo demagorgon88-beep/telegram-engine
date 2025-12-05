@@ -3,11 +3,11 @@ const bodyParser = require('body-parser');
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
-const cors = require('cors'); // We will use a manual header fix instead of installing the package to keep it simple
+// REMOVED THE CORS REQUIRE LINE THAT CAUSED THE CRASH
 
 const app = express();
 
-// --- 🔴 CRITICAL FIX: ENABLE CORS ---
+// --- CRITICAL FIX: ENABLE CORS (Manual Method) ---
 // This allows your landing page to talk to this server
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*"); // Allow any domain
