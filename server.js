@@ -3,12 +3,23 @@ const bodyParser = require('body-parser');
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
+const cors = require('cors'); // We will use a manual header fix instead of installing the package to keep it simple
 
 const app = express();
+
+// --- 🔴 CRITICAL FIX: ENABLE CORS ---
+// This allows your landing page to talk to this server
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*"); // Allow any domain
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    next();
+});
+
 app.use(bodyParser.json());
 
 // ============================================================
-// 👇 PASTE YOUR REAL TARGET LINK HERE (The t.me/m/... one)
+// 👇 YOUR FINAL DESTINATION LINK
 const FINAL_DESTINATION = "https://t.me/m/V8gacND6Yjcx"; 
 // ============================================================
 
@@ -34,11 +45,11 @@ async function sendFbEvent(eventName, userData, chatId) {
                 fbc: userData.fb_clid ? `fb.1.${currentTimestamp}.${userData.fb_clid}` : undefined,
                 client_user_agent: userData.fb_agent,
                 client_ip_address: userData.fb_ip,
-                external_id: chatId // This permanently links Telegram ID to FB
+                external_id: chatId
             },
             custom_data: {
-                content_name: userData.ad_name, // Pass Ad Name to FB
-                content_category: userData.adset_name // Pass Adset Name to FB
+                content_name: userData.ad_name,
+                content_category: userData.adset_name
             }
         }],
         access_token: FB_ACCESS_TOKEN
@@ -53,28 +64,31 @@ async function sendFbEvent(eventName, userData, chatId) {
 
 // --- 1. LANDING PAGE CALLS THIS ---
 app.post('/api/init-user', async (req, res) => {
-    // We now accept ad_name and adset_name
     const { fbclid, userAgent, ip, ad_name, adset_name } = req.body;
     
+    // Create Token
     const uniqueToken = 'user_' + Math.floor(Math.random() * 10000000);
 
+    // Save to DB
     const { error } = await supabase.from('users').insert({ 
         unique_token: uniqueToken, 
         fb_clid: fbclid, 
         fb_agent: userAgent, 
         fb_ip: ip,
-        ad_name: ad_name || 'unknown',      // Save Ad Name
-        adset_name: adset_name || 'unknown' // Save Adset Name
+        ad_name: ad_name || 'unknown',
+        adset_name: adset_name || 'unknown'
     });
 
     if (error) {
-        console.error(error);
+        console.error("DB Error:", error);
         return res.status(500).json({ error: 'DB Error' });
     }
+    
+    // Return the token to the website
     res.json({ token: uniqueToken });
 });
 
-// --- 2. TELEGRAM CALLS THIS (The Doorman) ---
+// --- 2. TELEGRAM CALLS THIS ---
 app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
     const msg = req.body.message;
     res.sendStatus(200);
@@ -86,20 +100,16 @@ app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/start user_')) {
         const token = text.split(' ')[1]; 
 
-        // Find User
         const { data: user, error } = await supabase
             .from('users').select('*').eq('unique_token', token).single();
 
         if (user && !error) {
-            // Update User Status
             await supabase.from('users')
                 .update({ telegram_id: chatId, status: 'verified' })
                 .eq('unique_token', token);
 
-            // Fire FB Lead Event
             await sendFbEvent('Lead', user, chatId);
 
-            // Send Link to Real Chat
             await bot.sendMessage(chatId, "✅ **Verification Successful.**\n\nClick below to access the session:", {
                 parse_mode: 'Markdown',
                 reply_markup: {
@@ -109,7 +119,6 @@ app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
                 }
             });
         } else {
-            // Backup if tracking fails
              await bot.sendMessage(chatId, "Welcome! Click here to enter:", {
                 reply_markup: { inline_keyboard: [[{ text: "Enter Chat", url: FINAL_DESTINATION }]] }
             });
