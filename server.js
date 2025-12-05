@@ -3,14 +3,13 @@ const bodyParser = require('body-parser');
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
-// REMOVED THE CORS REQUIRE LINE THAT CAUSED THE CRASH
+// Removed cors require
 
 const app = express();
 
-// --- CRITICAL FIX: ENABLE CORS (Manual Method) ---
-// This allows your landing page to talk to this server
+// --- CORS FIX ---
 app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*"); // Allow any domain
+    res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     next();
@@ -66,11 +65,10 @@ async function sendFbEvent(eventName, userData, chatId) {
 app.post('/api/init-user', async (req, res) => {
     const { fbclid, userAgent, ip, ad_name, adset_name } = req.body;
     
-    // Create Token
     const uniqueToken = 'user_' + Math.floor(Math.random() * 10000000);
 
-    // Save to DB
-    const { error } = await supabase.from('users').insert({ 
+    // 👇 UPDATED TABLE NAME HERE
+    const { error } = await supabase.from('usersbalka').insert({ 
         unique_token: uniqueToken, 
         fb_clid: fbclid, 
         fb_agent: userAgent, 
@@ -84,7 +82,6 @@ app.post('/api/init-user', async (req, res) => {
         return res.status(500).json({ error: 'DB Error' });
     }
     
-    // Return the token to the website
     res.json({ token: uniqueToken });
 });
 
@@ -100,11 +97,13 @@ app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
     if (text.startsWith('/start user_')) {
         const token = text.split(' ')[1]; 
 
+        // 👇 UPDATED TABLE NAME HERE
         const { data: user, error } = await supabase
-            .from('users').select('*').eq('unique_token', token).single();
+            .from('usersbalka').select('*').eq('unique_token', token).single();
 
         if (user && !error) {
-            await supabase.from('users')
+            // 👇 UPDATED TABLE NAME HERE
+            await supabase.from('usersbalka')
                 .update({ telegram_id: chatId, status: 'verified' })
                 .eq('unique_token', token);
 
