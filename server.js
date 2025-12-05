@@ -7,23 +7,24 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-// --- CONFIGURATION (Environment Variables) ---
-// We will set these in Render.com later, don't worry about them being empty now.
+// ============================================================
+// 👇 PASTE YOUR REAL TARGET LINK HERE (The t.me/m/... one)
+const FINAL_DESTINATION = "https://t.me/m/V8gacND6Yjcx"; 
+// ============================================================
+
+// --- ENV VARS ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const FB_ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
 const FB_PIXEL_ID = process.env.FB_PIXEL_ID;
-const APP_URL = process.env.APP_URL; // Your Render URL
 
-// --- INIT CLIENTS ---
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-const bot = new TelegramBot(TELEGRAM_TOKEN); // No polling, we use Webhooks
+const bot = new TelegramBot(TELEGRAM_TOKEN); 
 
-// --- FACEBOOK CAPI HELPER ---
-async function sendFbEvent(eventName, userData, eventData = {}) {
+// --- FB CAPI FUNCTION ---
+async function sendFbEvent(eventName, userData, chatId) {
     const currentTimestamp = Math.floor(new Date() / 1000);
-    
     const payload = {
         data: [{
             event_name: eventName,
@@ -33,96 +34,88 @@ async function sendFbEvent(eventName, userData, eventData = {}) {
                 fbc: userData.fb_clid ? `fb.1.${currentTimestamp}.${userData.fb_clid}` : undefined,
                 client_user_agent: userData.fb_agent,
                 client_ip_address: userData.fb_ip,
-                external_id: userData.telegram_id // Linking FB to Telegram ID
+                external_id: chatId // This permanently links Telegram ID to FB
             },
-            ...eventData
+            custom_data: {
+                content_name: userData.ad_name, // Pass Ad Name to FB
+                content_category: userData.adset_name // Pass Adset Name to FB
+            }
         }],
         access_token: FB_ACCESS_TOKEN
     };
-
     try {
         await axios.post(`https://graph.facebook.com/v18.0/${FB_PIXEL_ID}/events`, payload);
-        console.log(`✅ Sent ${eventName} to FB for user ${userData.unique_token}`);
-    } catch (error) {
-        console.error('❌ FB CAPI Error:', error.response ? error.response.data : error.message);
+        console.log(`✅ Sent ${eventName} for ${userData.ad_name}`);
+    } catch (e) {
+        console.error('❌ FB Error:', e.response ? e.response.data : e.message);
     }
 }
 
-// --- ROUTE 1: LANDING PAGE TRACKING ---
-// The LP calls this to save the FB click data and get a token
+// --- 1. LANDING PAGE CALLS THIS ---
 app.post('/api/init-user', async (req, res) => {
-    const { fbclid, userAgent, ip } = req.body;
+    // We now accept ad_name and adset_name
+    const { fbclid, userAgent, ip, ad_name, adset_name } = req.body;
     
-    // Generate a simple random token (e.g., 'user_98234')
-    const uniqueToken = 'user_' + Math.floor(Math.random() * 1000000);
+    const uniqueToken = 'user_' + Math.floor(Math.random() * 10000000);
 
-    // Save to Supabase
-    const { error } = await supabase
-        .from('users')
-        .insert({ 
-            unique_token: uniqueToken, 
-            fb_clid: fbclid, 
-            fb_agent: userAgent, 
-            fb_ip: ip 
-        });
+    const { error } = await supabase.from('users').insert({ 
+        unique_token: uniqueToken, 
+        fb_clid: fbclid, 
+        fb_agent: userAgent, 
+        fb_ip: ip,
+        ad_name: ad_name || 'unknown',      // Save Ad Name
+        adset_name: adset_name || 'unknown' // Save Adset Name
+    });
 
     if (error) {
-        console.error('Database Error:', error);
-        return res.status(500).json({ error: 'Failed to save user' });
+        console.error(error);
+        return res.status(500).json({ error: 'DB Error' });
     }
-
     res.json({ token: uniqueToken });
 });
 
-// --- ROUTE 2: TELEGRAM WEBHOOK ---
-// Telegram sends messages here
+// --- 2. TELEGRAM CALLS THIS (The Doorman) ---
 app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
     const msg = req.body.message;
-    res.sendStatus(200); // Tell Telegram we got it immediately
-
+    res.sendStatus(200);
     if (!msg) return;
 
     const chatId = msg.chat.id.toString();
     const text = msg.text || "";
 
-    // CHECK 1: Is this a "Start" command with a payload? (e.g., /start user_123456)
     if (text.startsWith('/start user_')) {
-        const uniqueToken = text.split(' ')[1]; // Extract 'user_123456'
+        const token = text.split(' ')[1]; 
 
-        // Find this user in Database
+        // Find User
         const { data: user, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('unique_token', uniqueToken)
-            .single();
+            .from('users').select('*').eq('unique_token', token).single();
 
         if (user && !error) {
-            // Update the user: Add Telegram ID and set status
-            await supabase
-                .from('users')
-                .update({ telegram_id: chatId, status: 'started' })
-                .eq('unique_token', uniqueToken);
+            // Update User Status
+            await supabase.from('users')
+                .update({ telegram_id: chatId, status: 'verified' })
+                .eq('unique_token', token);
 
-            // Send LEAD event to Facebook
-            // We now bridge the gap: FB Click <-> Telegram ID
-            await sendFbEvent('Lead', { ...user, telegram_id: chatId });
+            // Fire FB Lead Event
+            await sendFbEvent('Lead', user, chatId);
 
-            // Send your welcome message
-            await bot.sendMessage(chatId, "Welcome! I see you want the 30-day trial. Let's get started!");
+            // Send Link to Real Chat
+            await bot.sendMessage(chatId, "✅ **Verification Successful.**\n\nClick below to access the session:", {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: "💬 Enter Chat Now", url: FINAL_DESTINATION }
+                    ]]
+                }
+            });
         } else {
-            await bot.sendMessage(chatId, "Welcome! (Could not track your ad click, but glad you are here).");
+            // Backup if tracking fails
+             await bot.sendMessage(chatId, "Welcome! Click here to enter:", {
+                reply_markup: { inline_keyboard: [[{ text: "Enter Chat", url: FINAL_DESTINATION }]] }
+            });
         }
     }
-    
-    // CHECK 2: Listen for specific keywords (Purchase/Reg logic for later)
-    else if (text.toLowerCase().includes("buy")) {
-        // You would look up the user by chatId here and send a 'Purchase' event
-        // We can build this part later once the Lead part works.
-    }
 });
 
-// --- START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on ${PORT}`));

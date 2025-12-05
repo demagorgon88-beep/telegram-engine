@@ -1,7 +1,6 @@
 {
-  "name": "telegram-fb-engine",
+  "name": "doorman-engine",
   "version": "1.0.0",
-  "description": "FB CAPI to Telegram Bridge",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
