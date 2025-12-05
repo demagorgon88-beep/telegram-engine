@@ -117,17 +117,17 @@ app.post(`/bot${TELEGRAM_TOKEN}`, async (req, res) => {
 
             await sendFbEvent('Lead', user, chatId);
 
-            await bot.sendMessage(chatId, "✅ **Verification Successful.**\n\nClick below to access the session:", {
+            await bot.sendMessage(chatId, "🎯 **Imaš sreće!**\n\n Ostalo je par posljednjih mjesta za 30 dana FREE VIPA ⏳🔥 \n\n **Uđi odmah!**:", {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [[
-                        { text: "💬 Enter Chat Now", url: FINAL_DESTINATION }
+                        { text: "💬 Pošalji poruku SADA", url: FINAL_DESTINATION }
                     ]]
                 }
             });
         } else {
-             await bot.sendMessage(chatId, "Welcome! Click here to enter:", {
-                reply_markup: { inline_keyboard: [[{ text: "Enter Chat", url: FINAL_DESTINATION }]] }
+             await bot.sendMessage(chatId, "Ostalo je par posljednjih mjesta za 30 dana FREE VIPA:", {
+                reply_markup: { inline_keyboard: [[{ text: "Pošalji poruku SADA", url: FINAL_DESTINATION }]] }
             });
         }
     }
